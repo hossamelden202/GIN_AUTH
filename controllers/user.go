@@ -3,6 +3,8 @@ package controllers
 import (
 	//"net/http"
 
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	// "github.com/gin-gonic/gin/binding"
 	"GIN/config"
@@ -68,6 +70,10 @@ var input input
 if utils.ParseANDSendResponse(c,&input)==false {
 return
 }
+if !utils.CheckEMail(input.Email){
+	utils.SendError(c,http.StatusBadRequest,"invaild email")
+	return
+}
 	username:=utils.GenterUserName(input.Name)
 var hashed string
 	if hashed=utils.HashPassword(c,input.Password);hashed=="err"{
@@ -84,11 +90,11 @@ Gender: input.Gender,
 	}
 errD:=config.DB.Create(&users).Error
 if errD!=nil{
-utils.SendError(c,errD)
+utils.SendError(c,http.StatusBadRequest,errD.Error())
 return}
 	Token,errT:=utils.GenerteJwt(username,input.Email,int(users.ID),users.Role)
 	if errT!=nil{
-	utils.SendError(c,errT)
+	utils.SendError(c,http.StatusNotAcceptable,errT.Error())
 return}
 	
 

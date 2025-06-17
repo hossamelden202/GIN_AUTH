@@ -2,6 +2,7 @@ package routes
 
 import (
 	"GIN/controllers"
+	"GIN/middlerware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,4 +15,7 @@ userRoutes:=r.Group("/user")
 
 
 }
+userRoutes.Use(middlerware.Auth())
+userRoutes.POST("/login",controllers.Login)	
+
 }
