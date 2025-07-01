@@ -3,11 +3,14 @@ package main
 import (
 	"GIN/config"
 	"GIN/routes"
-  "regexp"
-  "github.com/gin-gonic/gin/binding"
-  "github.com/go-playground/validator/v10"
+	//"GIN/utils"
+	"regexp"
+
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 )
+
 // During your main setup or initialization function:
 func registerCustomValidators() {
   if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
@@ -21,6 +24,7 @@ func registerCustomValidators() {
 
 func main(){
 config.Connect()
+config.ConnectRedis()
 r:=gin.Default()
 registerCustomValidators()
 routes.Routing(r)
