@@ -2,6 +2,10 @@ package utils
 
 import (
 	"GIN/config"
+	"encoding/json"
+	// "html"
+	"io"
+	"net"
 
 	"GIN/model"
 
@@ -9,13 +13,15 @@ import (
 
 	//"fmt"
 	//"GIN/utils"
-"net/smtp"
+	//"github.com/mailersend/mailersend-go"
+
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"net/http"
+	"net/smtp"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +31,16 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+type GeoData struct {
+	Query        string `json:"query"`
+	Country      string `json:"country"`
+	RegionName   string `json:"regionName"`
+	City         string `json:"city"`
+	ISP          string `json:"isp"`
+	Timezone     string `json:"timezone"`
+	Org          string `json:"org"`
+	Status       string `json:"status"`
+}
 
 func GenerteJwt(Username string,Email string ,id int,role string,Time time.Duration)(string,error){
 token:=jwt.NewWithClaims(jwt.SigningMethodHS256,jwt.MapClaims{
@@ -236,7 +252,7 @@ return true
 if num2>=5{
 	fmt.Println("in checking if u can login found out num of attempts is",num2,ttl)
 
-    SendEmail(c,email)
+   SendEmail_FAILED_LOGIN(c,email)
 
 	config.Rdb.Set(config.Ctx,"Login:block:"+email,"1",5*time.Second)
 	SendError(c,http.StatusUnauthorized,fmt.Sprintf("You exceeded number of Attempts wait for %v",ttl))
@@ -244,6 +260,16 @@ if num2>=5{
 	return true
 } 
 return false
+}
+func RestAttempts(email string){
+	if num,err:=config.Rdb.Exists(config.Ctx,"Login:fail:"+email).Result();err!=nil||num!=0{
+config.Rdb.Del(config.Ctx,"Login:fail:"+email)
+	}
+		if num,err:=config.Rdb.Exists(config.Ctx,"Login:block:"+email).Result();err!=nil||num!=0{
+config.Rdb.Del(config.Ctx,"Login:block:"+email)
+	}
+	
+	
 }
 func IncrAttempts(c *gin.Context,email string)bool{
 	// var err error
@@ -286,46 +312,157 @@ return false
 	 return true
 
 }
-func SendEmail(c *gin.Context,email string){
+func SendEmail_FAILED_LOGIN(c *gin.Context,email string){
 Addr:=c.Request.RemoteAddr
+geo,err:=Sendlocation(Addr)
+if err!=nil{SendError(c,http.StatusInternalServerError,"something went wrong")
+fmt.Println(err.Error())
+return}
 fmt.Println("hello gere is addr",Addr)
-var user model.Users
-//email:="kittc584@gmail.com"
+ var user model.Users
+// email:="kc334844@gmail.com"
 config.DB.Where("email=?",email).First(&user)
-Message:=fmt.Sprintf(
+Message := fmt.Sprintf(
 `Hello %s,
 
 We noticed multiple failed login attempts on your account using the email: %s.
 
-📍 Location (based on IP): %s
+📍 Location Details:
+- IP Address: %s
+- Country: %s
+- Region: %s
+- City: %s
+- ISP: %s
+- Organization: %s 
+- Timezone: %s
 🕒 Time: %v
 
 As a security precaution, we’ve temporarily blocked login from this IP for 15 minutes.
 
 If this wasn’t you, we recommend:
 - Changing your password immediately.
-- Enabling extra security options, like 2FA .
+- Enabling extra security options, like 2FA.
 
 If you recognize this activity, no action is required.
 
-Stay safe,
-We onto you Nigga
+Stay safe,  
 The Racist Team 🛡️
-`,user.Username,user.Email,Addr,time.Now())
+`,
+	user.Username,         //  — username
+	user.Email,            // %s — email
+	geo.Query,             // %s — IP
+	geo.Country,           // %s — country
+	geo.RegionName,        // %s — region
+	geo.City,              // %s — city
+	geo.ISP,               // %s — ISP
+	geo.Org,               // %s — organization
+	geo.Timezone,          // %s — timezone
+	time.Now(),            // %v — timestamp
+)
 
 SendEmailSmtp(c,email,Message)
 
 }
-func SendEmailSmtp(c *gin.Context,email string,Message string ){
-	port:="587"
+func SendEmail(c *gin.Context,email string){
+	Addr:=c.Request.RemoteAddr
+geo,err:=Sendlocation(Addr)
+if err!=nil{SendError(c,http.StatusInternalServerError,"something went wrong")
+fmt.Println(err.Error())
+return}
+fmt.Println("hello gere is addr",Addr)
+ var user model.Users
+// email:="kc334844@gmail.com"
+config.DB.Where("email=?",email).First(&user)
+Message := fmt.Sprintf(
+`Subject: 🎉 Welcome to Racist Team, %s!
 
-	host:="smtp.gmail.com"
-	auth:=smtp.PlainAuth("",os.Getenv("Mail_email"),os.Getenv("Mail_password"),host)
-	err:=smtp.SendMail(host+":"+port,auth,os.Getenv("Mail_email"),[]string{email},[]byte (Message))
+Hello %s 👋,
+
+Welcome aboard! Your account with the email: %s has just been created successfully.
+
+🗺️ Location at Signup:
+- IP Address: %s
+- Country:%s
+- Region: %s
+- City: %s
+- ISP: %s
+- Organization: %s
+- Timezone: %s
+
+🕒 Signup Time: %v
+
+We’re thrilled to have you in the Racist Team family.  
+Feel free to explore, connect, and enjoy everything we’ve built for you 💥
+
+If you didn’t create this account, please contact us immediately.
+
+Cheers,  
+The Racist Team 🛡️
+
+`,
+	user.Username,
+	user.Username,         //  — username
+	user.Email,            // %s — email
+	geo.Query,             // %s — IP
+	geo.Country,           // %s — country
+	geo.RegionName,        // %s — region
+	geo.City,              // %s — city
+	geo.ISP,               // %s — ISP
+	geo.Org,               // %s — organization
+	geo.Timezone,          // %s — timezone
+	time.Now(),            // %v — timestamp
+)
+
+SendEmailSmtp(c,email,Message)
+}
+func SendEmailSmtp(c *gin.Context,email string,Message string ){
+	
+// 	ms:=mailersend.NewMailersend(os.Getenv("Ms_API_KEY"))
+// 	msg:=ms.Email.NewMessage()
+// 	From:=mailersend.From{Name:"team",Email: os.Getenv("Mail_email")}
+// 	to:=mailersend.Recipient{Name:userName,Email: email}
+// 	msg.SetFrom(From)
+// 	msg.SetRecipients([]mailersend.Recipient{to})
+// 	msg.SetSubject("Alert: Login issue")
+// 	// msg.SetText(Message)
+// 	msg.SetHTML("<pre>"+html.EscapeString(Message)+"</pre>")
+// fmt.Println("EMAIL MESSAGE:\n", Message)
+
+// 	_,_,err:=ms.BulkEmail.Send(config.Ctx,[]*mailersend.Message{msg})
+
+auth:=smtp.PlainAuth("",os.Getenv("Mail_email"),os.Getenv("Mail_password"),"smtp.gmail.com")
+    Addr:="smtp.gmail.com"+":"+"587"
+	err:=smtp.SendMail(Addr,auth,os.Getenv("Mail_email"),[]string{email},[]byte(Message))
+	
+
 	if err!=nil{
+		
 		SendError(c,http.StatusInternalServerError,fmt.Sprintf("something went wrong:%s",err))
 		return
 	}
 }
+func Sendlocation(ip string)(*GeoData,error){
+	// fmt.Println("first",ip)
+	
+ip,_,err2:=net.SplitHostPort(ip)
+if err2!=nil{return nil,err2}
+// fmt.Println("sec",ip)
+resp,err:=http.Get("http://ip-api.com/json/"+"8.8.8.8")
 
+
+
+if err!=nil{return nil,err}
+body,error:=io.ReadAll(resp.Body)
+defer resp.Body.Close()
+if error!=nil{return nil,error}
+var data *GeoData
+fmt.Println(resp)
+fmt.Println("body:",string(body))
+//can use parseAndsend written funcion  
+error=json.Unmarshal(body,&data)
+if error!=nil{return nil,error}
+if data.Status!="success"{return nil,fmt.Errorf("failed to get geo info")}
+return data,nil
+}
+//745058958154756
 

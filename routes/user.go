@@ -3,7 +3,7 @@ package routes
 import (
 	"GIN/controllers"
 	"GIN/middlerware"
-	"GIN/utils"
+
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,12 +18,14 @@ userRoutes:=r.Group("/user")
 }
 userRoutes.POST("/captcha-solved",controllers.Captcha)
 userRoutes.POST("/refresh",controllers.Refresh)
-
+userRoutes.POST("/verify-email",controllers.Verify_email)
+userRoutes.POST("/create-2fA",controllers.Create_2fA)
+userRoutes.POST("verify-2fA",controllers.Verify_2fA)
 userRoutes.Use(middlerware.Auth())
 userRoutes=r.Group("/user")
 {
 userRoutes.POST("/logout",controllers.Logout)
-userRoutes.POST("/test",utils.SendEmail)
+
 
 }
 
