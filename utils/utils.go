@@ -630,21 +630,21 @@ return false
 }
 return true
 }
-func NotOldPassword(c *gin.Context,password string,id uint){
+func NotOldPassword(password string,id uint)string{
 	var history []model.OldPassword
-	if err:=config.DB.Model(&model.OldPassword{}).Where("user_id=?",id).Find(&histor).Error;err!=nil{
-		SendError(c,http.StatusInternalServerError,"something went wrong")
-		return 
+	if err:=config.DB.Model(&model.OldPassword{}).Where("user_id=?",id).Order("created_at DESC").Find(&history).Error;err!=nil{
+		return "something went wrong"
+		
 		
 	}
-	for i:=0;i<len(history);i++{
+	for i:=0;i<5;i++{
 		if history[i].Password==password{
 
-			SendError(c,http.StatusUnauthorized,"You enter old password")
-			return 
+			return "You enter old password"
+			
 		}
 	}
-
+return "0"
 
 
 }

@@ -1003,16 +1003,53 @@ if !exist{
 	utils.SendError(c,http.StatusUnauthorized,"you are unauthorized to enter this route")
 	return
 }
-utils.NotOldPassword(input.Password,id.(uint))
+if res:=utils.NotOldPassword(input.Password,id.(uint));res!="0"{
+	utils.SendError(c,http.StatusBadRequest,res)
+}
 if subtle.ConstantTimeCompare([]byte(input.Password),[]byte(input.Confirm))!=1{
 	utils.SendError(c,http.StatusUnauthorized,"confirm password isnot like the password")
 	return
 }
 hashed:=utils.HashPassword(c,input.Password)
-if err:=config.DB.Model(&model.Users{}).Where("email=?",email).Update("password_hash",hashed).Error;err!=nil{
+if err:=config.DB.Model(&model.Users{}).Where("email=?",email.(string)).Update("password_hash",hashed).Error;err!=nil{
 	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 	return
 }
+username,exist:=c.Get("Username")
+if !exist{
+	utils.SendError(c,http.StatusUnauthorized,"you are unauthorized to enter this route")
+	return
+}
+
+data,err:=utils.Sendlocation(c.Request.RemoteAddr)
+if err!=nil{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	return
+}
+message:=fmt.Sprintf(`Hi ,%s
+
+We’re letting you know that the password for your account (**%s*) was just changed.
+
+🕒 Time: %s
+📍 Location: %s,%s 
+🌐 IP Address: %s
+🖥️ Device: %s
+
+---
+
+If **you made this change**, no further action is needed.  
+If **you did NOT** change your password, please secure your account immediately:
+
+🔒 [Reset your password now]  
+🔍 [Review recent account activity]
+
+Your security is our top priority.  
+If you have any questions, reply to this email or contact our support team.
+
+Stay safe,  
+**The SOAH Team**
+`,username,email.(string),data.Timezone,data.City,data.Country,data.Query,c.Request.UserAgent())
+utils.SendEmailSmtp(c,email.(string),message)
 utils.SendRes(c,"password updated correctly")
 
 }
