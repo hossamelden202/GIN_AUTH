@@ -2,7 +2,14 @@ package utils
 
 import (
 	"GIN/config"
+
+	"crypto/rand"
+	"crypto/sha1"
+	"math/big"
+
+	"encoding/hex"
 	"encoding/json"
+
 	// "html"
 	"io"
 	"net"
@@ -40,6 +47,10 @@ type GeoData struct {
 	Timezone     string `json:"timezone"`
 	Org          string `json:"org"`
 	Status       string `json:"status"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	Zip          string     `json:"zip"`
+	CountryCode  string      `json:"countryCode"`
 }
 
 func GenerteJwt(Username string,Email string ,id int,role string,Time time.Duration)(string,error){
@@ -92,6 +103,9 @@ default:
 return true
 }
 func SendRes(c *gin.Context,res interface{}){
+	if c.Writer.Written(){
+		return
+	}
 	switch c.ContentType(){
 case "application/xml":
 
@@ -106,7 +120,9 @@ default:
 
 }
 func SendError(c *gin.Context,status int,err string){
-
+if c.Writer.Written(){
+	return
+}
 	switch c.ContentType(){
 		case "application/xml":
 			if err!=""{
@@ -466,3 +482,169 @@ return data,nil
 }
 //745058958154756
 
+func SetDeviceInfo(c *gin.Context,email string){
+	
+var user model.Users
+if err := config.DB.Where("email = ?", email).First(&user).Error; err != nil {
+	SendError(c, http.StatusInternalServerError, "failed to load user")
+	return
+}
+
+	ip:=c.Request.RemoteAddr
+
+browser:=c.Request.UserAgent()
+geo,errw:=Sendlocation(ip)
+
+	if errw!=nil{
+		SendError(c,http.StatusInternalServerError,"something went wrong")
+		fmt.Println("ashd",errw)
+		return
+	}
+	dev:=model.DeviceRecord{
+    	UserID:user.ID,
+		City:geo.City,
+		Region:geo.RegionName,
+		Country:geo.Country,
+		Lat:geo.Lat,
+		Lon:geo.Lon,
+		ZipCode:geo.Zip,
+		Locale:"en"+"-"+geo.CountryCode,
+		Browser:browser,
+		LastLogin:time.Now(),
+	}
+erre := config.DB.Model(&model.DeviceRecord{}).
+	Where("userID=?", user.ID).
+	Assign(dev).
+	FirstOrCreate(&dev).Error
+
+
+if erre!=nil{
+	SendError(c,http.StatusInternalServerError,"something went wrong")
+	fmt.Println("sja",erre)
+	return
+
+}
+
+}
+func VerifEmailHelper(c *gin.Context,email string)bool{
+	code,err:=rand.Int(rand.Reader,big.NewInt(1000000))
+	if err!=nil{
+	
+		return false
+	}
+if err:=config.Rdb.Set(config.Ctx,"ChangeEmail:code:"+email,code,10*time.Minute).Err();err!=nil{
+	return false
+}
+
+message:=fmt.Sprintf(`Hello,
+
+We received a request to change the email address associated with your account. To confirm this change and verify your new email address, please use the verification code below:
+
+🔐 Verification Code: %s
+
+This code is valid for the next 10 minutes.
+
+If you did not request this change, please ignore this email or contact our support team immediately. Your current email will remain unchanged if this request is not confirmed.
+
+Stay safe,  
+The SOAH Security Team 🛡️
+`,fmt.Sprintf("%06d",code.Int64()))
+SendEmailSmtp(c,email,message)
+return true
+}
+
+func ValidatePassword(passwordstr string)string{
+    password:=strings.Split(passwordstr, "")
+	if len(password)<12||len(password)>128{
+		return "password should be between 12 and 128"
+	}
+	 hasUpper:=false
+	 upper :=0
+	 hasLower :=false
+	 lower :=0
+	 hasSymbol :=false
+	 sym :=0
+	 hasNum :=false
+	 num :=0
+
+	for i:=0;i<len(password);i++{
+if password[i]>"A"&&password[i]<"Z"{
+	hasUpper=true
+	upper++
+}else if password[i]>"a"&&password[i]<"z"{
+	hasLower=true
+	lower++
+}else if password[i]>"1"&&password[i]<"9"{
+	hasNum=true
+	num++
+}else{
+	hasSymbol=true
+	num++
+}
+	}
+	if !hasLower||lower<3{
+		return "password should contain atleast 3 lower case char"
+	}
+	if !hasUpper||upper<3{
+		return "password should contain atleast 3 upper case char"
+	}
+	if !hasSymbol||sym<3{
+		return "password should contain atleast 3 symbol "
+	}
+	if !hasNum||num<3{
+		return "password should contain atleast 3 num"
+	}
+	hashed:=sha1.Sum([]byte(passwordstr))
+
+hashedstr:=hex.EncodeToString(hashed[:])
+hashedsend:=hashedstr[:5]
+	resp,err:=http.Get(fmt.Sprintf("https://api.pwnedpasswords.com/range/%s",hashedsend))
+	if err!=nil{
+			return "something went wrong while vaildating"
+	}
+	body,err:=io.ReadAll(resp.Body)
+	if err!=nil{
+			return "something went wrong while vaildating"
+	}
+	suffex:=strings.Split(string(body), "\r\n")
+	for i:=0;i<len(suffex);i++{
+		str,empty:=strings.CutSuffix(suffex[i],":")
+		if empty{
+			continue
+		}
+		if str==hashedstr[5:]{
+			return "your password is breached"
+		}
+	}
+return "0"
+}
+func AddpasswordHistory(hashed string,id uint)bool{
+	
+	history:=model.OldPassword{
+		
+		UserID: id,
+		Password: hashed,
+	}
+if err:=config.DB.Create(&history).Error;err!=nil{
+return false
+}
+return true
+}
+func NotOldPassword(c *gin.Context,password string,id uint){
+	var history []model.OldPassword
+	if err:=config.DB.Model(&model.OldPassword{}).Where("user_id=?",id).Find(&histor).Error;err!=nil{
+		SendError(c,http.StatusInternalServerError,"something went wrong")
+		return 
+		
+	}
+	for i:=0;i<len(history);i++{
+		if history[i].Password==password{
+
+			SendError(c,http.StatusUnauthorized,"You enter old password")
+			return 
+		}
+	}
+
+
+
+}

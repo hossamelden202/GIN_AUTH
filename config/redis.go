@@ -14,8 +14,8 @@ err:=Rdb.Ping(Ctx).Err()
 if err!=nil{
 	panic("something went wrong during connection database")
 }
-// err2:=Rdb.FlushAll(Ctx).Err()
-// if err2!=nil{
-// 	panic("something went wrong during connection database")
-// }
+err2:=Rdb.FlushAll(Ctx).Err()
+if err2!=nil{
+	panic("something went wrong during connection database")
+}
 }
