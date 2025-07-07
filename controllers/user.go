@@ -8,9 +8,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-
+	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/nbutton23/zxcvbn-go/scoring"
 	"github.com/pquerna/otp/totp"
 	"github.com/redis/go-redis/v9"
 	"github.com/skip2/go-qrcode"
@@ -44,7 +45,7 @@ import (
 //     ID       int    `json:"id"`
 // }
 type Password struct{
-Password string  `json:"password" binding:"required"`
+Password string `json:"password" binding:"required"`
 Confirm string `json:"confirm" binding:"required"`
 
 }
@@ -138,12 +139,14 @@ return
 }
 if res:=utils.ValidatePassword(input.Password);res!="0"{
 	utils.SendError(c,http.StatusBadRequest,res)
+	return
 }
 
 if !utils.CheckEMail(input.Email){
-	utils.SendError(c,http.StatusBadRequest,"invaild email")
+	utils.SendError(c,http.StatusBadRequest,"invaild gmail email or email registered in system")
 	return
 }
+
 num,err:=rand.Int(rand.Reader,big.NewInt(1000000))
 if err!=nil{utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 return}
@@ -265,7 +268,7 @@ return
 func Login(c *gin.Context){
 	var input login
 	utils.ParseANDSendResponse(c,&input)
-if !utils.CheckEMail(input.Email){
+if !utils.CheckEmailLogin(input.Email){
 	utils.SendError(c,http.StatusForbidden,"enter valid email")
 	return
 }
@@ -351,7 +354,7 @@ utils.SendError(c,http.StatusUnauthorized,"no valid refreshToken cookie has been
 	return
 } 
 var username,email,role string
-var id int
+var id,version int
 if val,exist:=c.Get("Username");exist{
 username=val.(string)
 }
@@ -365,9 +368,17 @@ if val,exist:=c.Get("id");exist{
 if val,exist:=c.Get("role");exist{
 	role=val.(string)
 }
- newToken,errt:=utils.GenerteJwt(username,email,id,role,time.Minute*7)
+if val,exist:=c.Get("version");exist{
+	version=val.(int)
+}
+devid:=utils.SetDeviceInfo(c,email)
+ newToken,errt:=utils.GenerteJwt(c,username,email,id,role,time.Minute*7,version,devid)
  if errt!=nil{
 	utils.SendError(c,http.StatusBadRequest,"something went wrong try again")
+	return
+ }
+ if !utils.SetSession(c){
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong in sessions")
 	return
  }
  res:=struct{
@@ -432,29 +443,38 @@ if refreshToken==token{
 	return
 }
 c.SetCookie("refresh-token","",-1,"/",os.Getenv("domain"),true,true)
-if cla,ok:=token.Claims.(jwt.MapClaims);ok{
-	var exp interface{}
-	var ok bool
-	if exp,ok=cla["exp"];!ok{
-		utils.SendError(c,http.StatusFailedDependency,"something went wrong")
-		return
-	}
-	if jti,ok:=cla["jti"];ok{
-		ttl:=time.Until(time.Unix(exp.(int64),0))
-		config.Rdb.Set(config.Ctx,"Blocklist:"+jti.(string),"1",ttl)
-		c.Set("jti",jti)
-	}
-	if id,ok:=cla["id"];ok{
-		id:=id.(float64)
-		c.Set("id",int(id))
-	}
+//var id any
+////if cla,ok:=token.Claims.(jwt.MapClaims);ok{
+	//var exp interface{}
+	//var ok bool
+	//if exp,ok=cla["exp"];!ok{
+
+	//	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	//	return
+//	}
+	//if jti,ok:=cla["jti"];ok{
+	//	ttl:=time.Until(time.Unix(exp.(int64),0))
+	//	config.Rdb.Set(config.Ctx,"Blocklist:"+jti.(string),"1",ttl)
+		//c.Set("jti",jti.(string))
+//	}
+	
+	
+//	if id,ok=cla["id"];ok{
+	//	id:=id.(float64)
+		//c.Set("id",int(id))
+	//}
+//}
+if err:=config.Rdb.Del(config.Ctx,"session:"+strconv.Itoa(c.GetInt("id"))+":"+c.GetString("jti")).Err();err!=nil{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	return
 }
+
 
 }
 func Captcha(c *gin.Context){
 
 	email:=c.Query("email")
-	if email==""||!utils.CheckEMail(email){
+	if email==""||!utils.CheckEmailLogin(email){
 		utils.SendError(c,http.StatusBadRequest,"Email is Required")
 		return
 	}
@@ -516,13 +536,15 @@ errr:=json.Unmarshal([]byte(bytes),&user)
 		fmt.Println(errr)
 		return
 	}
-	acctoken,err4:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Minute*15)
+	devid:=utils.SetDeviceInfo(c,input.Email)
+	
+	acctoken,err4:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Minute*15,user.Token_version,devid)
 
 if err4!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
 	return
 }
-RefreshToken,errR:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24)
+RefreshToken,errR:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24,user.Token_version,devid)
 
 if errR!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
@@ -541,7 +563,13 @@ response:=struct{
 	Refresh_token: RefreshToken,
 }
 utils.RestAttempts(input.Email)
-utils.SetDeviceInfo(c,input.Email)
+
+sessCheck:=utils.SetSession(c)
+if !sessCheck{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	return
+}
+
 utils.SendRes(c,response)
 
 }
@@ -624,13 +652,15 @@ errr:=json.Unmarshal([]byte(bytes),&user)
 		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 		return
 	}
-	acctoken,err4:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Minute*15)
+	devid:=utils.SetDeviceInfo(c,input.Email)
+	acctoken,err4:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Minute*15,user.Token_version,devid)
 
 if err4!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
 	return
 }
-RefreshToken,errR:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24)
+
+RefreshToken,errR:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24,user.Token_version,devid)
 
 if errR!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
@@ -648,8 +678,15 @@ response:=struct{
 	Token:acctoken,
 	Refresh_token: RefreshToken,
 }
+
 utils.RestAttempts(input.Email)
 utils.SetDeviceInfo(c,input.Email)
+sessCheck:=utils.SetSession(c)
+if !sessCheck{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	return
+}
+
 utils.SendRes(c,response)
 
     
@@ -756,13 +793,15 @@ copy = append(copy, codes[i])
 // 		utils.SendError(c,http.StatusInternalServerError,"dassomething went wrong")
 // 		return
 // 	}
-	acctoken,err4:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Minute*15)
+devid:=utils.SetDeviceInfo(c,input.Email)
+	acctoken,err4:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Minute*15,user.Token_version,devid)
 
 if err4!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
 	return
 }
-RefreshToken,errR:=utils.GenerteJwt(user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24)
+
+RefreshToken,errR:=utils.GenerteJwt(c,user.Username,input.Email,int(user.ID),user.Role,time.Hour*7*24,user.Token_version,devid)
 
 if errR!=nil{
 	utils.SendError(c,http.StatusBadRequest,"try again someting went wrong")
@@ -782,6 +821,12 @@ response:=struct{
 }
 utils.RestAttempts(input.Email)
 utils.SetDeviceInfo(c,input.Email)
+sessCheck:=utils.SetSession(c)
+if !sessCheck{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+	return
+}
+
 utils.SendRes(c,response)
 
 user.Login_codes=strings.Join(copy, ",")
@@ -800,8 +845,13 @@ if err!=nil{
 
 func ForgetPassword(c *gin.Context){
 var input Email 
+
 if ! utils.ParseANDSendResponse(c,&input){
 	return
+}
+if utils.ResetAttempts(c,input.Email){
+utils.SendError(c,http.StatusUnauthorized,"u exceeded the time that u are allowed to reset password wait 15 min")
+return
 }
 token:=uuid.New().String()
 email:=fmt.Sprintf("%s%s&email=%s", os.Getenv("Gmail_Forget_password"),token,input.Email)
@@ -822,6 +872,7 @@ Stay secure,
 The SOAH Team 🛡️
 `,strings.TrimSuffix(input.Email,"@gmail.com"),input.Email,email)
 config.Rdb.Set(config.Ctx,"Reset:token:"+input.Email,token,15*time.Minute)
+utils.IncrAttempts(c,input.Email)
 utils.SendEmailSmtp(c,input.Email,message)
 utils.SendRes(c,"Token sent by email check your email")
 }
@@ -836,7 +887,8 @@ func ResetPassword(c *gin.Context){
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(token),[]byte(input.Token))==1{
-		hashed,err:=bcrypt.GenerateFromPassword([]byte(input.Password),bcrypt.DefaultCost)
+		p:=os.Getenv("Pepper")
+		hashed,err:=bcrypt.GenerateFromPassword([]byte(input.Password+p),bcrypt.DefaultCost)
 		if err!=nil{
 			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 			return
@@ -849,6 +901,7 @@ func ResetPassword(c *gin.Context){
 		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 	     return	
 	}
+	utils.RsetResetAttempts(input.Email)
 	utils.SendRes(c,"password Reseted correctly")
 	}else{
 		utils.SendError(c,http.StatusUnauthorized,"unathourized access cannot reset password")
@@ -883,7 +936,7 @@ func ReauthPassword(c *gin.Context){
 if !utils.ParseANDSendResponse(c,&input){
 		return
 	}
-	if !utils.CheckEMail(input.Email){
+	if !utils.CheckEmailLogin(input.Email){
 		utils.SendError(c,http.StatusUnauthorized,"invaild Email")
 		return
 	}
@@ -978,7 +1031,7 @@ func ReauthCode(c *gin.Context){
 if err:=config.Rdb.Set(config.Ctx,"Reauth:"+input.Email,"1",5*time.Minute).Err();err!=nil{
 	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 }
-	c.Set("email",input.Email)
+
 utils.SendRes(c,"you can change your cerditional now")
 
 
@@ -986,28 +1039,46 @@ utils.SendRes(c,"you can change your cerditional now")
 
 func ChangePassword(c *gin.Context){
 var input Password
-if !utils.ParseANDSendResponse(c,input){
+if !utils.ParseANDSendResponse(c,&input){
+	fmt.Println("cannot be parsed")
 	return
 }
-if res:=utils.ValidatePassword(input.Password);res!="0"{
-	utils.SendError(c,http.StatusBadRequest,res)
-	return
-}
+
+
 email,exist:=c.Get("email")
 if !exist{
 	utils.SendError(c,http.StatusUnauthorized,"you are unauthorized to enter this route")
 	return
+}
+var user model.Users
+	if err:=config.DB.Model(&model.Users{}).Where("email=?",email.(string)).First(&user).Error;err!=nil{
+		
+			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+
+ res:=utils.ValidatePassword(input.Password)
+ if res!="0"{
+	utils.SendError(c,http.StatusBadRequest,res)
+	return
+}
+score:=utils.AnalisePass(input.Password,user)
+if utils.StricerPassword(score)==-1{
+	utils.SendError(c,http.StatusUnauthorized,"your password not accepted")
 }
 id,exist:=c.Get("id")
 if !exist{
 	utils.SendError(c,http.StatusUnauthorized,"you are unauthorized to enter this route")
 	return
 }
-if res:=utils.NotOldPassword(input.Password,id.(uint));res!="0"{
+if res:=utils.NotOldPassword(input.Password,uint(id.(int)));res!="0"{
 	utils.SendError(c,http.StatusBadRequest,res)
+	fmt.Println("its old password")
+	return
 }
 if subtle.ConstantTimeCompare([]byte(input.Password),[]byte(input.Confirm))!=1{
 	utils.SendError(c,http.StatusUnauthorized,"confirm password isnot like the password")
+	
 	return
 }
 hashed:=utils.HashPassword(c,input.Password)
@@ -1028,7 +1099,7 @@ if err!=nil{
 }
 message:=fmt.Sprintf(`Hi ,%s
 
-We’re letting you know that the password for your account (**%s*) was just changed.
+We’re letting you know that the password for your account (**%s**) was just changed.
 
 🕒 Time: %s
 📍 Location: %s,%s 
@@ -1049,27 +1120,57 @@ If you have any questions, reply to this email or contact our support team.
 Stay safe,  
 **The SOAH Team**
 `,username,email.(string),data.Timezone,data.City,data.Country,data.Query,c.Request.UserAgent())
+
+user.Token_version++
+	if err:=config.DB.Model(&model.Users{}).Where("email=?",email.(string)).Update("token_version",user.Token_version).Error;err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
 utils.SendEmailSmtp(c,email.(string),message)
-utils.SendRes(c,"password updated correctly")
+ress:=struct{
+	Message string
+	Score scoring.MinEntropyMatch
+}{
+	Message:"password updated correctly",
+	Score: score,
+}
+utils.SendRes(c,ress)
 
 }
 
 func ChangeEmail(c *gin.Context){
 	var input Email
 	
-	if !utils.ParseANDSendResponse(c,input){
+	if !utils.ParseANDSendResponse(c,&input){
 		return
 	}
-if !utils.CheckEMail(input.Email)||! utils.VerifEmailHelper(c,input.Email){
+if !utils.CheckEMail(input.Email){
+		fmt.Println("13")
+			utils.SendError(c,http.StatusUnauthorized,"input email is not valid")
+			return
+}
+email,exist:=c.Get("email")
+if !exist{
+	utils.SendError(c,http.StatusUnauthorized,"u didnot login so your actions forbidded")
+	return
+}
+
+fmt.Println(email,"::",input.Email)
+if ! utils.VerifEmailHelper(c,input.Email,email.(string)){
 	utils.SendError(c,http.StatusUnauthorized,"input email is not valid")
+	fmt.Println("213")
+	return
 }
 
 
-
+utils.SendRes(c,"no you can verify your email to change it")
 	
 }
 func VerifyNewEmail(c *gin.Context){
   var	input Verify
+  if !utils.ParseANDSendResponse(c,&input){
+	return
+  }
     email,exist:=c.Get("email")
 	if !exist{
 		utils.SendError(c,http.StatusUnauthorized,"you cannot use this codes method it must be enables first")
@@ -1080,13 +1181,151 @@ func VerifyNewEmail(c *gin.Context){
 		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 		return
 	 }
-	 if subtle.ConstantTimeCompare([]byte(code),[]byte(input.Code))!=1{
-		utils.SendError(c,http.StatusUnauthorized,"Enter code correctly")
+	 if err==redis.Nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong:doesnot exist in redis")
 		return
 	 }
- if err:=config.DB.Model(&model.Users{}).Where("email=?",email).Update("email",input.Email).Error;err!=nil{
+	 if subtle.ConstantTimeCompare([]byte(code),[]byte(input.Code))!=1{
+		utils.SendError(c,http.StatusUnauthorized,"Enter code correctly")
+		fmt.Println(code,"::",input.Code)
+		return
+	 }
+     if err:=config.DB.Model(&model.Users{}).Where("email=?",email).Update("email",input.Email).Error;err!=nil{
 		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
 		return
 	 }
+	 var user model.Users
+	if err:=config.DB.Model(&model.Users{}).Where("email=?",input.Email).First(&user).Error;err!=nil{
+		
+			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+user.Token_version++
+	if err:=config.DB.Model(&model.Users{}).Where("email=?",input.Email).Update("token_version",user.Token_version).Error;err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
    utils.SendRes(c,"email changed correctly")
+}
+func GetUser(c *gin.Context){
+	email,exist:=c.Get("email")
+	if!exist{
+		utils.SendError(c,http.StatusUnauthorized,"user isnot authorized this route ")
+		return
+	}
+	var user model.Users
+	var err error
+	if err=config.DB.Model(&model.Users{}).Where("email=?",email).First(&user).Error;err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+	if err==redis.Nil{
+		utils.SendError(c,http.StatusBadRequest,"user isnot in system")
+		return
+	}
+	res:=struct{
+		User model.Users
+	}{
+		User:user,
+	}
+
+	utils.SendRes(c,res)
+}
+
+func LogoutALL(c *gin.Context){
+	var cursor uint64
+
+	for{
+	scannedkeys,cursor,err:=config.Rdb.Scan(config.Ctx,cursor,"session:"+ c.GetString("id")+":"+"*",100).Result()
+	if err!=nil{
+			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		     return}
+			 for _,keys:= range scannedkeys{
+				parts:=strings.Split(keys,":")
+				if len(parts)==3{
+
+err:=config.Rdb.Set(config.Ctx,"Blocklist:"+parts[2],"1",15*time.Minute).Err()
+if err!=nil{
+	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		     return
+}
+				}
+			 }
+			 if len(scannedkeys)>0{
+				
+			
+if err:=config.Rdb.Del(config.Ctx,scannedkeys...).Err();err!=nil{
+			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		     return
+
+}
+			 }
+if cursor==0{
+	break;
+}
+
+}
+utils.SendRes(c,"you logout all session successfully")
+
+}
+func GetSession(c *gin.Context){
+	var cursor uint64
+	var sessions []model.Session
+for{
+	scannedkeys,cursor,err:=config.Rdb.Scan(config.Ctx,cursor,"session:"+c.GetString("id")+":*",100).Result()
+	if err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+	for _,key :=range scannedkeys{
+
+		parts:=strings.Split(key,":")
+		if len(parts)==3{
+			
+			 res,err:=config.Rdb.Get(config.Ctx,key).Result()
+			 if err!=nil{
+				utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+				return
+
+			}
+			var session model.Session
+
+			errr:=json.Unmarshal([]byte(res),&session)
+			fmt.Println("one::",session)
+			
+		if errr!=nil{
+			utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+			return
+			}
+		//	var devinfo model.DeviceRecord
+	//	if err:=config.DB.Model(&model.DeviceRecord{}).Where("id=?",session.DeviceInfoId).First(&devinfo).Error;err!=nil{
+		//	utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		//	return
+	//	}
+			sessions=append(sessions,session)
+
+		}
+	}
+	if cursor==0{
+		break
+	}
+
+}
+fmt.Println("final:::",sessions)
+	utils.SendRes(c,sessions)
+}
+
+func LogoutSession(c *gin.Context){
+	fmt.Println("iam inside logout session")
+	id:=c.Param("sessionid")
+
+	if err:=config.Rdb.Del(config.Ctx,"session:"+strconv.Itoa(c.GetInt("id"))+":"+id).Err();err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+	if err:=config.Rdb.Set(config.Ctx,"Blocklist:"+id,"1",15*time.Minute).Err();err!=nil{
+		utils.SendError(c,http.StatusInternalServerError,"something went wrong")
+		return
+	}
+	utils.SendRes(c,"session logged out successfully")
 }

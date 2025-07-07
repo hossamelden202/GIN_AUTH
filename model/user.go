@@ -30,6 +30,7 @@ type Users struct {
 	Login_codes           string    `gorm:"column:login_codes"`
 	Login_codes_set       bool      `gorm:"column:login_codes_set;default:false"`
 	Tfa_code              string     `gorm:"column:tfa_code"` 
+	Token_version         int     `gorm:"column:token_version"`
 }
 func (Users) TableName() string {
 	return "users" // 👈 exact match with your actual Postgres table name
@@ -38,7 +39,9 @@ func (DeviceRecord) TableName() string {
 	return "device_record"
 }
 
-
+func (OldPassword)TableName()string{
+	return "old_password"
+}
 type DeviceRecord struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
 	UserID    uint      `gorm:"column:userid;not null"`
@@ -56,4 +59,13 @@ type OldPassword struct{
 	ID        uint      `gorm:"column:id;primaryKey"`
 UserID uint `gorm:"column:user_id;not null"`
 Password string `gorm:"column:password"`
+}
+type Session struct{
+			
+			Jti string
+			UserID int
+			IsActive bool
+			IssuedAT time.Time
+			DeviceInfoId int
+			ExpireAt time.Time
 }

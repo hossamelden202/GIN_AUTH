@@ -2,6 +2,7 @@ package utils
 
 import (
 	"GIN/config"
+	
 
 	"crypto/rand"
 	"crypto/sha1"
@@ -32,6 +33,9 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nbutton23/zxcvbn-go"
+
+	"github.com/nbutton23/zxcvbn-go/scoring"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -53,17 +57,33 @@ type GeoData struct {
 	CountryCode  string      `json:"countryCode"`
 }
 
-func GenerteJwt(Username string,Email string ,id int,role string,Time time.Duration)(string,error){
+func GenerteJwt(c *gin.Context,Username string,Email string ,id int,role string,Time time.Duration,version int,devid int)(string,error){
+	
+jti:=uuid.New().String()	
+exp:=time.Now().Add(Time).Unix()
 token:=jwt.NewWithClaims(jwt.SigningMethodHS256,jwt.MapClaims{
 	"Username":Username,
 	"email":Email,
 	"role":role,
 	"id":id,
-	"exp":time.Now().Add(Time).Unix(),
+	"exp":exp,
 	"iat":time.Now().Unix(),
+	"version":version,
+	"jti":jti,
+	"devid":devid,
 
 
 })
+c.Set("Username",Username)
+c.Set("email",Email)
+c.Set("role",role)
+c.Set("id",id)
+c.Set("exp",exp)
+c.Set("jti",jti)
+c.Set("version",version)
+
+
+
 
 
 return token.SignedString([]byte(os.Getenv("jwt_secret")))
@@ -141,7 +161,8 @@ if c.Writer.Written(){
 	}
 }
 func HashPassword(c *gin.Context,password string)string{
-bytes,err:=bcrypt.GenerateFromPassword([]byte(password),bcrypt.DefaultCost)
+	Pepper:=os.Getenv("Pepper")
+bytes,err:=bcrypt.GenerateFromPassword([]byte(password+Pepper),bcrypt.DefaultCost)
 if err!=nil{
 SendError(c,http.StatusForbidden,err.Error())
 return "err"
@@ -166,11 +187,34 @@ valid:=regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 if !valid.MatchString(str[0]){
 return false
 }
+var user model.Users
+if config.DB.Model(&model.Users{}).Where("email=?",email).Find(&user).RowsAffected!=0{
+	return false
+}
+return true
+}
+func CheckEmailLogin(email string)bool{
+	if !strings.Contains(email,"@"){
+	return false
+}
 
+str:= strings.Split(email,"@")
+   if len(str) != 2 {
+    return false
+  }
+
+if str[1]!="gmail.com"{
+return false}
+
+valid:=regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+if !valid.MatchString(str[0]){
+return false
+}
 return true
 }
 func CheckPass(password string,hashed string)bool {
-	err:=bcrypt.CompareHashAndPassword([]byte(hashed),[]byte(password))
+	pepper:=os.Getenv("Pepper")
+	err:=bcrypt.CompareHashAndPassword([]byte(hashed),[]byte(password+pepper))
 	if err!=nil{
 		return false
 	}
@@ -457,7 +501,7 @@ auth:=smtp.PlainAuth("",os.Getenv("Mail_email"),os.Getenv("Mail_password"),"smtp
 		return
 	}
 }
-func Sendlocation(ip string)(*GeoData,error){
+func Sendlocation(ip string)(*GeoData,error) {
 	// fmt.Println("first",ip)
 	
 ip,_,err2:=net.SplitHostPort(ip)
@@ -482,12 +526,12 @@ return data,nil
 }
 //745058958154756
 
-func SetDeviceInfo(c *gin.Context,email string){
+func SetDeviceInfo(c *gin.Context,email string)int{
 	
 var user model.Users
 if err := config.DB.Where("email = ?", email).First(&user).Error; err != nil {
 	SendError(c, http.StatusInternalServerError, "failed to load user")
-	return
+	return 0
 }
 
 	ip:=c.Request.RemoteAddr
@@ -498,7 +542,7 @@ geo,errw:=Sendlocation(ip)
 	if errw!=nil{
 		SendError(c,http.StatusInternalServerError,"something went wrong")
 		fmt.Println("ashd",errw)
-		return
+		return 0
 	}
 	dev:=model.DeviceRecord{
     	UserID:user.ID,
@@ -521,19 +565,26 @@ erre := config.DB.Model(&model.DeviceRecord{}).
 if erre!=nil{
 	SendError(c,http.StatusInternalServerError,"something went wrong")
 	fmt.Println("sja",erre)
-	return
+	return 0
 
 }
 
+fmt.Println("this is now the device id been set:",int(dev.ID))
+
+c.Set("devid",int(dev.ID))
+return int(dev.ID)
 }
-func VerifEmailHelper(c *gin.Context,email string)bool{
+func VerifEmailHelper(c *gin.Context,email string,oldemail string)bool{
 	code,err:=rand.Int(rand.Reader,big.NewInt(1000000))
 	if err!=nil{
-	
+	fmt.Println(err.Error())
 		return false
 	}
-if err:=config.Rdb.Set(config.Ctx,"ChangeEmail:code:"+email,code,10*time.Minute).Err();err!=nil{
+	fmt.Println("oldy",oldemail)
+if err:=config.Rdb.Set(config.Ctx,"ChangeEmail:code:"+oldemail,fmt.Sprintf("%06d",code.Int64()),10*time.Minute).Err();err!=nil{
+	fmt.Println(err.Error())
 	return false
+
 }
 
 message:=fmt.Sprintf(`Hello,
@@ -550,6 +601,7 @@ Stay safe,
 The SOAH Security Team 🛡️
 `,fmt.Sprintf("%06d",code.Int64()))
 SendEmailSmtp(c,email,message)
+
 return true
 }
 
@@ -579,7 +631,7 @@ if password[i]>"A"&&password[i]<"Z"{
 	num++
 }else{
 	hasSymbol=true
-	num++
+	sym++
 }
 	}
 	if !hasLower||lower<3{
@@ -616,7 +668,28 @@ hashedsend:=hashedstr[:5]
 			return "your password is breached"
 		}
 	}
+	
+	
 return "0"
+}
+func AnalisePass(passwordstr string,user model.Users)scoring.MinEntropyMatch{
+score:=zxcvbn.PasswordStrength(passwordstr,[]string{user.Username,user.Email,user.Name,"SOAH","support"})
+return score
+}
+func StricerPassword(score scoring.MinEntropyMatch)int{
+	if time.Now().Hour()>2{
+if score.Score<3{
+	return -1
+}
+if score.Entropy<60{
+	return -1
+}
+if score.CrackTime<1e19{
+
+}
+
+	}
+	return 1
 }
 func AddpasswordHistory(hashed string,id uint)bool{
 	
@@ -637,7 +710,7 @@ func NotOldPassword(password string,id uint)string{
 		
 		
 	}
-	for i:=0;i<5;i++{
+	for i:=0;i<len(history)&&i<5;i++{
 		if history[i].Password==password{
 
 			return "You enter old password"
@@ -645,6 +718,156 @@ func NotOldPassword(password string,id uint)string{
 		}
 	}
 return "0"
+
+
+
+}
+
+func ResetAttempts(c *gin.Context,email string)bool{
+	fmt.Println("just wondering")
+str2,err2:=config.Rdb.Get(config.Ctx,"reset:block:"+email).Result()
+	if err2==nil&&err2==redis.Nil{
+	SendError(c,http.StatusInternalServerError,"Email isnot blocked")
+		return false
+	}
+	if str2=="1"{
+		SendError(c,http.StatusTooManyRequests,"you are blocked wait 15 min utils you can try again")
+		return true
+	}
+
+	if num,err:=config.Rdb.Exists(config.Ctx,"reset:fail:"+email).Result();err!=nil||num==0{
+		fmt.Println("First try to reset")
+		return false
+	}
+num,err:=config.Rdb.Get(config.Ctx,"reset:fail:"+email).Result()
+if err!=nil{
+	
+	SendError(c,http.StatusInternalServerError,"something just went2 wrong")
+	return true
+}
+num2,err2:=strconv.Atoi(num)
+if err2!=nil{
+	SendError(c,http.StatusInternalServerError,"something just went3 wrong")
+	return true
+}
+
+ttl,errT:=config.Rdb.TTL(config.Ctx,"reset:fail:"+email).Result()
+if errT!=nil{
+	SendError(c,http.StatusInternalServerError,"something went wrong")
+	return true
+}////captcha-solved?email=hossam2@gmail.com
+if num2==3{
+	num2++
+	err:=config.Rdb.Set(config.Ctx,"reset:fail:"+email,num2,ttl).Err()
+	fmt.Println(ttl ,"CC is here ",num2)
+	if err!=nil{
+		SendError(c,http.StatusInternalServerError,"something went wrong")
+		return true
+	}
+	SendError(c,http.StatusUnauthorized,"Slove Captcha first")
+	
+	return true
+}
+if num2>3&&num2<5{
+	num,err:=config.Rdb.Exists(config.Ctx,"captcha:passed:"+email).Result()
+
+	if err!=nil||num==0{
+SendError(c,http.StatusUnauthorized,"You should Solve Captcha First")
+return true
+	}
+	return false
+}
+ fmt.Println(num2 ,"GG here is ")
+if num2>=5{
+	fmt.Println("in checking if u can reset found out num of attempts is",num2,ttl)
+
+ 
+//production
+	config.Rdb.Set(config.Ctx,"reset:block:"+email,"1",5*time.Second)
+	SendError(c,http.StatusUnauthorized,fmt.Sprintf("You exceeded number of Attempts wait for %v",ttl))
+	
+	return true
+} 
+return false
+}
+func RsetResetAttempts(email string){
+	if num,err:=config.Rdb.Exists(config.Ctx,"reset:fail:"+email).Result();err!=nil||num!=0{
+config.Rdb.Del(config.Ctx,"reset:fail:"+email)
+	}
+		if num,err:=config.Rdb.Exists(config.Ctx,"reset:block:"+email).Result();err!=nil||num!=0{
+config.Rdb.Del(config.Ctx,"reset:block:"+email)
+	}
+	
+	
+}
+func IncrResetAttempts(c *gin.Context,email string)bool{
+	// var err error
+	// var num int64
+	num,err:=config.Rdb.Exists(config.Ctx,"reset:fail:"+email).Result();
+	if err!=nil||num==0{
+		//fmt.Println("here uis eror",err,num);
+	fmt.Println("doesnt exist so add it")
+	err:=config.Rdb.Set(config.Ctx,"reset:fail:"+email,0,time.Second*5).Err()
+	if err!=nil{
+	SendError(c,http.StatusInternalServerError,"something went wrong 6")
+	return false
+	}
+}
+
+	str,err:=config.Rdb.Get(config.Ctx,"reset:fail:"+email).Result()
+	//fmt.Println(str,"here is the error",err.Error())
+	if err!=nil{
+		SendError(c,http.StatusInternalServerError,"something just went4 wrong")
+
+		return false
+	}
+	str=strings.TrimSpace(str)
+	nume,err2:=strconv.Atoi(str)
+	if err2!=nil{
+		SendError(c,http.StatusInternalServerError,"something just went5 wrong")
+		return false
+	}
+	nume++
+	fmt.Println(nume)
+	ttl,errT:=config.Rdb.TTL(config.Ctx,"reset:fail:"+email).Result()
+	if errT!=nil{
+   SendError(c,http.StatusInternalServerError,"something went wrong")
+return false
+	}
+	if err:=config.Rdb.Set(config.Ctx,"reset:fail:"+email,nume,ttl).Err();err!=nil{
+		SendError(c,http.StatusInternalServerError,"something went wrong")
+		return false
+	}
+	 return true
+
+}
+ 
+func SetSession(c *gin.Context)bool{
+
+session:=model.Session{
+	
+	Jti:c.GetString("jti"),
+	UserID: c.GetInt("id"),
+	IsActive: true,
+	IssuedAT: time.Now(),
+	DeviceInfoId: c.GetInt("devid"),
+	ExpireAt:time.Now().Add(time.Minute*15),
+}
+fmt.Println("iam in setSessions")
+fmt.Println("id:", c.GetInt("id"))
+fmt.Println("jti:", c.GetString("jti"))
+fmt.Println("devid:", c.GetInt("devid"))
+
+
+bytes,err:=json.Marshal(session)
+if err!=nil{
+	return false
+}
+if err:=config.Rdb.Set(config.Ctx,"session:"+ c.GetString("id")+":"+c.GetString("jti"),bytes,time.Minute*15).Err();err!=nil{
+fmt.Println(err.Error())
+return false
+}
+return true
 
 
 }
