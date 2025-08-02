@@ -1,0 +1,1342 @@
+openapi: 3.0.0
+info:
+  title: GIN Authentication Microservice API
+  description: |
+    Enterprise-grade authentication microservice with JWT, 2FA, password management,
+    device tracking, geolocation-based security, and role-based access control.
+    
+    Security Features:
+    - JWT-based authentication with refresh tokens
+    - Two-Factor Authentication (TOTP + Backup Codes)
+    - Password strength validation & breach checking
+    - Geolocation-based access control
+    - Device tracking and session management
+    - Rate limiting & brute force protection
+    - Constant-time comparison for security
+    - Password history tracking
+    
+    Authentication: Use Bearer token in Authorization header
+  version: 1.0.0
+  contact:
+    name: Security Team
+    email: security@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Development Server
+  - url: https://api.example.com
+    description: Production Server
+
+tags:
+  - name: Authentication
+    description: User registration, login, and logout
+  - name: Email Verification
+    description: Email verification for signup and login
+  - name: Two-Factor Auth
+    description: 2FA setup and verification
+  - name: Password Management
+    description: Password reset, change, and recovery
+  - name: Sessions
+    description: Session and device management
+  - name: User Profile
+    description: User profile and account information
+  - name: Security
+    description: Security operations (reauth, device info)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token (15 minutes validity)
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: johndoe_a1b2c3d4
+        email:
+          type: string
+          format: email
+          example: john@gmail.com
+        name:
+          type: string
+          example: John Doe
+        phone:
+          type: string
+          example: "1234567890"
+        gender:
+          type: string
+          enum: [male, female]
+          example: male
+        role:
+          type: string
+          enum: [user, admin, moderator, staff]
+          example: user
+          default: user
+        is_email_verified:
+          type: boolean
+          example: true
+        is_verified:
+          type: boolean
+          example: false
+        is_active:
+          type: boolean
+          example: true
+        tfa_verified:
+          type: boolean
+          example: false
+        login_codes_set:
+          type: boolean
+          example: false
+        profile_image_url:
+          type: string
+          nullable: true
+          example: https://example.com/profile.jpg
+        cover_image_url:
+          type: string
+          nullable: true
+          example: https://example.com/cover.jpg
+        bio:
+          type: string
+          nullable: true
+          example: "Software developer"
+        created_at:
+          type: string
+          format: date-time
+          example: 2024-01-01T00:00:00Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2024-01-01T00:00:00Z
+
+    Session:
+      type: object
+      properties:
+        Jti:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        UserID:
+          type: integer
+          example: 1
+        IsActive:
+          type: boolean
+          example: true
+        IssuedAT:
+          type: string
+          format: date-time
+          example: 2024-01-01T00:00:00Z
+        DeviceInfoId:
+          type: integer
+          example: 1
+        ExpireAt:
+          type: string
+          format: date-time
+          example: 2024-01-01T00:15:00Z
+
+    DeviceRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        user_id:
+          type: integer
+          example: 1
+        city:
+          type: string
+          example: San Francisco
+        region:
+          type: string
+          example: California
+        country:
+          type: string
+          example: United States
+        locale:
+          type: string
+          example: en-US
+        lat:
+          type: number
+          format: double
+          example: 37.7749
+        lon:
+          type: number
+          format: double
+          example: -122.4194
+        zip_code:
+          type: string
+          example: "94105"
+        browser:
+          type: string
+          example: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+        last_login:
+          type: string
+          format: date-time
+          example: 2024-01-01T12:30:00Z
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Invalid email format
+
+    PasswordStrengthAnalysis:
+      type: object
+      properties:
+        Score:
+          type: integer
+          example: 3
+        Entropy:
+          type: number
+          format: double
+          example: 85.5
+        CrackTime:
+          type: number
+          format: double
+          example: 1000000000
+        Sequence:
+          type: array
+          items: {}
+
+paths:
+  /user/signup:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user account
+      description: |
+        Create a new user account with email verification.
+        Password must meet complexity requirements.
+        Geographic restrictions apply (some countries blocked).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - phone
+                - gender
+                - ZipCode
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 255
+                  pattern: '^[a-zA-Z\s]+$'
+                  example: John Doe
+                  description: Full name (letters and spaces only)
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                  description: Valid Gmail address (not already registered)
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  example: SecurePass123!@#
+                  description: "Must contain: 3+ uppercase, 3+ lowercase, 3+ numbers, 3+ special chars"
+                phone:
+                  type: string
+                  pattern: '^\d+$'
+                  example: "1234567890"
+                  description: Numeric phone number
+                gender:
+                  type: string
+                  enum: [male, female]
+                  example: male
+                ZipCode:
+                  type: string
+                  example: "94105"
+      responses:
+        202:
+          description: Verification email sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Verify your email to continue"
+        400:
+          description: Invalid input or weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_email:
+                  value:
+                    error: "invalid gmail email or email registered in system"
+                weak_password:
+                  value:
+                    error: "password should be between 12 and 128 characters"
+        401:
+          description: Geographic restriction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/verify_signup_email:
+    post:
+      tags:
+        - Email Verification
+      summary: Verify signup email and create account
+      description: |
+        Confirm email verification code sent during signup.
+        Creates user account and hashes password with bcrypt+pepper.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  example: "123456"
+                  description: 6-digit verification code
+      responses:
+        200:
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        401:
+          description: Invalid or expired verification code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login with email and password
+      description: |
+        Authenticate user with email and password.
+        Includes rate limiting (3 attempts → CAPTCHA, 5+ → 15min block).
+        Sends verification code to email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                password:
+                  type: string
+                  example: SecurePass123!@#
+      responses:
+        200:
+          description: Credentials verified, verification code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Enter verification code to continue"
+        400:
+          description: Invalid email format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        401:
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        429:
+          description: Too many attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                needs_captcha:
+                  value:
+                    error: "Solve CAPTCHA first"
+                blocked:
+                  value:
+                    error: "Account blocked for 15 minutes"
+
+  /user/verify-email:
+    post:
+      tags:
+        - Email Verification
+      summary: Verify email code and complete login
+      description: |
+        Confirm email verification code to complete login.
+        If 2FA enabled, requires additional verification.
+        Otherwise, returns access and refresh tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  example: "123456"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+                    format: jwt
+                    description: Access token (15 min)
+                  refresh_token:
+                    type: string
+                    format: jwt
+                    description: Refresh token (7 days, HTTP-only cookie)
+        401:
+          description: Invalid verification code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/create-2fA:
+    post:
+      tags:
+        - Two-Factor Auth
+      summary: Setup two-factor authentication
+      description: |
+        Generate TOTP secret and QR code for 2FA setup.
+        User scans QR code with authenticator app (Google Authenticator, Authy, etc).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+      responses:
+        200:
+          description: 2FA setup data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: john@gmail.com
+                  png:
+                    type: string
+                    description: Base64 encoded QR code PNG image
+                    example: "data:image/png;base64,iVBORw0KGgoAAAANS..."
+                  secret:
+                    type: string
+                    description: TOTP secret key for manual entry
+                    example: "JBSWY3DPEBLW64TMMQ6AAAAA"
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/verify-2fA:
+    post:
+      tags:
+        - Two-Factor Auth
+      summary: Verify 2FA code
+      description: |
+        Authenticate using TOTP code from authenticator app.
+        RFC 6238 standard with 30-second time window.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  example: "123456"
+      responses:
+        200:
+          description: 2FA verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+                    format: jwt
+                  refresh_token:
+                    type: string
+                    format: jwt
+        401:
+          description: Invalid 2FA code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/generte_login_codes:
+    post:
+      tags:
+        - Two-Factor Auth
+      summary: Generate backup login codes
+      description: |
+        Create 12 one-time backup login codes for account recovery.
+        Codes are sent via email and should be stored securely.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+      responses:
+        200:
+          description: Backup codes generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Backup codes generated and sent to email"
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/verify_login_code:
+    post:
+      tags:
+        - Two-Factor Auth
+      summary: Login with backup code
+      description: |
+        Authenticate using one backup login code.
+        Code is marked as used after successful authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                code:
+                  type: string
+                  example: "123456"
+      responses:
+        200:
+          description: Code verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+                    format: jwt
+                  refresh_token:
+                    type: string
+                    format: jwt
+        401:
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        403:
+          description: Backup codes not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/forget_password:
+    post:
+      tags:
+        - Password Management
+      summary: Request password reset
+      description: |
+        Send password reset link to user email.
+        Link contains secure UUID token valid for 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+      responses:
+        200:
+          description: Reset email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset link sent to email"
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/reset_password:
+    post:
+      tags:
+        - Password Management
+      summary: Complete password reset
+      description: |
+        Reset password using token from email link.
+        New password must meet complexity requirements.
+        Invalidates all existing tokens (forces re-login).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - token
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                token:
+                  type: string
+                  format: uuid
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  example: NewSecurePass123!@#
+      responses:
+        200:
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset successfully"
+        401:
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        400:
+          description: Weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/change-password:
+    post:
+      tags:
+        - Password Management
+      summary: Change password (authenticated)
+      description: |
+        Change password for authenticated user.
+        Requires reauth (password or 2FA) within last 5 minutes.
+        Invalidates all tokens and requires re-login.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+                - confirm
+              properties:
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  example: NewSecurePass123!@#
+                confirm:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  example: NewSecurePass123!@#
+      responses:
+        200:
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password updated successfully"
+                  score:
+                    $ref: '#/components/schemas/PasswordStrengthAnalysis'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        403:
+          description: Reauth required or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        400:
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/change-email:
+    post:
+      tags:
+        - Password Management
+      summary: Initiate email change
+      description: |
+        Request email change for authenticated user.
+        Requires reauth within last 5 minutes.
+        Verification code sent to new email.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: newemail@gmail.com
+      responses:
+        200:
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Verify new email to complete change"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        403:
+          description: Reauth required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        400:
+          description: Invalid email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/verify-new-email:
+    post:
+      tags:
+        - Email Verification
+      summary: Confirm email change
+      description: |
+        Verify and complete email change with confirmation code.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: newemail@gmail.com
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  example: "123456"
+      responses:
+        200:
+          description: Email changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Email changed successfully"
+        401:
+          description: Unauthorized or invalid code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/reauth-password:
+    post:
+      tags:
+        - Security
+      summary: Reauth with password
+      description: |
+        Verify identity with password for sensitive operations.
+        Sets 5-minute reauth window for password/email changes.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                password:
+                  type: string
+                  example: SecurePass123!@#
+      responses:
+        200:
+          description: Reauth successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "You can now change your credentials"
+        401:
+          description: Unauthorized or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/reauth-2fa:
+    post:
+      tags:
+        - Security
+      summary: Reauth with 2FA
+      description: |
+        Verify identity with 2FA code for sensitive operations.
+        Sets 5-minute reauth window.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@gmail.com
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  example: "123456"
+      responses:
+        200:
+          description: Reauth successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "You can now change your credentials"
+        401:
+          description: Unauthorized or invalid code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        403:
+          description: 2FA not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: |
+        Get new access token using refresh token cookie.
+        Refresh token must be present in HTTP-only cookie.
+      responses:
+        200:
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  NewAcesstoken:
+                    type: string
+                    format: jwt
+                    description: New access token (15 min)
+        401:
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/me:
+    get:
+      tags:
+        - User Profile
+      summary: Get current user profile
+      description: Retrieve authenticated user's profile information.
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/device-info:
+    get:
+      tags:
+        - Security
+      summary: Get device information
+      description: |
+        Retrieve device and geolocation information for user.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+          example: john@gmail.com
+      responses:
+        200:
+          description: Device information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceRecord'
+        400:
+          description: Missing email parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/get-sessions:
+    get:
+      tags:
+        - Sessions
+      summary: List active sessions
+      description: Get all active sessions for authenticated user.
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: List of active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout current session
+      description: |
+        Close current session and invalidate access token.
+        Removes session from Redis and adds token to blocklist.
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/logout-all:
+    post:
+      tags:
+        - Authentication
+      summary: Logout all sessions
+      description: |
+        Close all active sessions on all devices.
+        Invalidates all tokens and requires full re-login.
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: All sessions closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out from all sessions"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/logout/{sessionid}:
+    post:
+      tags:
+        - Sessions
+      summary: Logout specific session
+      description: |
+        Close specific session by JTI (JWT ID).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        200:
+          description: Session closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Session closed successfully"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/captcha-solved:
+    post:
+      tags:
+        - Security
+      summary: Mark CAPTCHA as solved
+      description: |
+        Mark CAPTCHA completion for rate limiting bypass.
+        Allows proceeding with login after CAPTCHA verification.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+          example: john@gmail.com
+      responses:
+        200:
+          description: CAPTCHA marked as solved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "CAPTCHA verified"
+        400:
+          description: Invalid email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

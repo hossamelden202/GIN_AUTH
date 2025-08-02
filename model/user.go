@@ -31,6 +31,7 @@ type Users struct {
 	Login_codes_set       bool      `gorm:"column:login_codes_set;default:false"`
 	Tfa_code              string     `gorm:"column:tfa_code"` 
 	Token_version         int     `gorm:"column:token_version"`
+	Provider              string   `gorm:"column:provider"`
 }
 func (Users) TableName() string {
 	return "users" // 👈 exact match with your actual Postgres table name

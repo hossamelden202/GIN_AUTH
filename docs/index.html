@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIN Auth API Documentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui.css">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-family='Arial'>A</text></svg>">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .topbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .topbar h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .topbar p {
+            margin: 5px 0 0 0;
+            opacity: 0.95;
+            font-size: 14px;
+        }
+        .swagger-ui {
+            max-width: 100%;
+        }
+        .swagger-ui .topbar {
+            display: none;
+        }
+        .info-section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+        .info-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .info-section ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .info-section li {
+            margin: 8px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>GIN Authentication Microservice</h1>
+        <p>Enterprise-grade Authentication API with 2FA, JWT, and Device Tracking</p>
+    </div>
+
+    <div style="padding: 20px; max-width: 1200px; margin: 0 auto;">
+        <div class="info-section">
+            <h2>API Documentation</h2>
+            <p>Interactive API explorer for the GIN Authentication Microservice. Use this interface to explore, test, and understand all available endpoints.</p>
+            
+            <h3>Key Features</h3>
+            <ul>
+                <li><strong>JWT Authentication:</strong> Secure token-based authentication with 15-minute access tokens and 7-day refresh tokens</li>
+                <li><strong>2FA Support:</strong> Two-Factor Authentication using TOTP (Google Authenticator, Authy) and backup login codes</li>
+                <li><strong>Password Security:</strong> Bcrypt+pepper hashing, complexity validation, breach checking, and password history</li>
+                <li><strong>Device Tracking:</strong> Geolocation-based security, device identification, and session management</li>
+                <li><strong>Rate Limiting:</strong> Brute force protection with CAPTCHA and 15-minute blocks</li>
+                <li><strong>Role-Based Access:</strong> Admin, Moderator, User, and Staff roles with different permissions</li>
+            </ul>
+
+            <h3>Getting Started</h3>
+            <ul>
+                <li><strong>Base URL:</strong> <code>http://localhost:8080</code></li>
+                <li><strong>Authentication:</strong> Use Bearer token in Authorization header</li>
+                <li><strong>Content-Type:</strong> All requests use <code>application/json</code></li>
+                <li><strong>Response Format:</strong> Success returns data object, errors return <code>{"error": "message"}</code></li>
+            </ul>
+
+            <h3>Security Headers</h3>
+            <ul>
+                <li><strong>Authorization:</strong> <code>Authorization: Bearer YOUR_ACCESS_TOKEN</code></li>
+                <li><strong>Cookies:</strong> Refresh token automatically stored in HTTP-only cookie</li>
+                <li><strong>CSRF:</strong> Protected via refresh token pattern (not needed)</li>
+            </ul>
+
+            <h3>Common HTTP Status Codes</h3>
+            <ul>
+                <li><strong>200:</strong> Success</li>
+                <li><strong>202:</strong> Accepted (verification needed)</li>
+                <li><strong>400:</strong> Bad Request (invalid input)</li>
+                <li><strong>401:</strong> Unauthorized (invalid token/credentials)</li>
+                <li><strong>403:</strong> Forbidden (insufficient permissions)</li>
+                <li><strong>429:</strong> Too Many Requests (rate limited)</li>
+                <li><strong>500:</strong> Server Error</li>
+            </ul>
+
+            <h3>Authentication Flow Example</h3>
+            <ol>
+                <li>POST <code>/user/signup</code> with name, email, password → Get verification email</li>
+                <li>POST <code>/user/verify_signup_email</code> with code → Account created</li>
+                <li>POST <code>/user/login</code> with credentials → Get verification code</li>
+                <li>POST <code>/user/verify-email</code> with code → Get access & refresh tokens</li>
+                <li>Use access token in all authenticated requests</li>
+                <li>When access token expires, POST <code>/user/refresh</code> to get new token</li>
+            </ol>
+
+            <h3>User Roles</h3>
+            <ul>
+                <li><strong>user:</strong> Regular user with basic permissions</li>
+                <li><strong>moderator:</strong> Can perform moderation actions</li>
+                <li><strong>admin:</strong> Full system access</li>
+                <li><strong>staff:</strong> Staff-level permissions</li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            SwaggerUIBundle({
+                url: '/docs/swagger.yaml',
+                dom_id: '#swagger-ui',
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                docExpansion: "list",
+                filter: true,
+                showRequestHeaders: true,
+                requestInterceptor: (request) => {
+                    // Add any default headers here
+                    return request;
+                },
+                responseInterceptor: (response) => {
+                    return response;
+                },
+                // Try it out settings
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
+            });
+        }
+    </script>
+
+    <script>
+        // Add copy-to-clipboard functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const styleSheet = document.createElement('style');
+            styleSheet.textContent = `
+                .copy-btn {
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    margin-left: 8px;
+                }
+                .copy-btn:hover {
+                    background: #764ba2;
+                }
+            `;
+            document.head.appendChild(styleSheet);
+        });
+    </script>
+</body>
+</html>

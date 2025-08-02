@@ -477,18 +477,7 @@ SendEmailSmtp(c,email,Message)
 }
 func SendEmailSmtp(c *gin.Context,email string,Message string ){
 	
-// 	ms:=mailersend.NewMailersend(os.Getenv("Ms_API_KEY"))
-// 	msg:=ms.Email.NewMessage()
-// 	From:=mailersend.From{Name:"team",Email: os.Getenv("Mail_email")}
-// 	to:=mailersend.Recipient{Name:userName,Email: email}
-// 	msg.SetFrom(From)
-// 	msg.SetRecipients([]mailersend.Recipient{to})
-// 	msg.SetSubject("Alert: Login issue")
-// 	// msg.SetText(Message)
-// 	msg.SetHTML("<pre>"+html.EscapeString(Message)+"</pre>")
-// fmt.Println("EMAIL MESSAGE:\n", Message)
 
-// 	_,_,err:=ms.BulkEmail.Send(config.Ctx,[]*mailersend.Message{msg})
 
 auth:=smtp.PlainAuth("",os.Getenv("Mail_email"),os.Getenv("Mail_password"),"smtp.gmail.com")
     Addr:="smtp.gmail.com"+":"+"587"
