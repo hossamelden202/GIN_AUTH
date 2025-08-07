@@ -599,7 +599,7 @@ CREATE INDEX idx_old_password_user_id ON old_password(user_id);
                 <li>Create user in database</li>
                 <li>Hash password with bcrypt + pepper</li>
                 <li>Add to password history</li>
-                <li>Account created ✅</li>
+                <li>Account created  </li>
             </ol>
 
             <h3>Login Flow (with 2FA)</h3>
@@ -623,7 +623,7 @@ CREATE INDEX idx_old_password_user_id ON old_password(user_id);
                 </li>
                 <li>Generate JWT tokens (access + refresh)</li>
                 <li>Create session in Redis</li>
-                <li>Return tokens to user ✅</li>
+                <li>Return tokens to user  </li>
             </ol>
 
             <h3>Token Refresh Flow</h3>
@@ -635,7 +635,7 @@ CREATE INDEX idx_old_password_user_id ON old_password(user_id);
                 <li>Check token version matches user version</li>
                 <li>Generate new access token (15 min)</li>
                 <li>Create new session</li>
-                <li>Return new token ✅</li>
+                <li>Return new token  </li>
             </ol>
 
             <h3>Password Change Flow</h3>
@@ -650,7 +650,7 @@ CREATE INDEX idx_old_password_user_id ON old_password(user_id);
                 <li>Update database</li>
                 <li>Add old password to history</li>
                 <li>Increment token_version (invalidates all tokens)</li>
-                <li>Delete all sessions (force re-login) ✅</li>
+                <li>Delete all sessions (force re-login)  </li>
             </ol>
         </div>
 

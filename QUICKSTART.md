@@ -1,6 +1,6 @@
 # GIN Authentication Microservice - Quick Start Guide
 
-## 📦 What You Have Now
+##  What You Have Now
 
 After running the setup, your project contains:
 
@@ -39,7 +39,7 @@ GIN/
 
 ---
 
-## 🚀 Quick Start (5 Minutes)
+##  Quick Start (5 Minutes)
 
 ### 1. Install Dependencies
 
@@ -193,7 +193,7 @@ Open your browser:
 
 ---
 
-## 📚 Documentation Files
+##  Documentation Files
 
 ### 1. **README.md** - Full Documentation
 - Project overview
@@ -229,7 +229,7 @@ Open your browser:
 
 ---
 
-## 🔑 23 API Endpoints
+##  23 API Endpoints
 
 ### Authentication (4)
 - `POST /user/signup` - Register
@@ -269,7 +269,7 @@ Open your browser:
 
 ---
 
-## 🧪 Testing Examples
+##   Testing Examples
 
 ### Test Signup
 ```bash
@@ -299,22 +299,22 @@ curl -X POST http://localhost:8080/user/refresh \
 
 ---
 
-## 🔒 Security Highlights
+##  Security Highlights
 
-✅ **JWT Authentication:** 15-min access + 7-day refresh tokens
-✅ **2FA Support:** TOTP with backup codes
-✅ **Password Security:** Bcrypt+pepper, complexity checks, breach detection
-✅ **Device Tracking:** Geolocation, browser info, last login
-✅ **Rate Limiting:** CAPTCHA after 3 failed attempts, 15-min block after 5
-✅ **Role-Based Access:** Admin, Moderator, User, Staff
-✅ **Constant-Time Comparison:** Prevents timing attacks
-✅ **Session Management:** Redis-backed with TTL
-✅ **Reauth for Sensitive Ops:** Password/email changes require verification
-✅ **Email Verification:** 6-digit codes with 15-min expiration
+ **JWT Authentication:** 15-min access + 7-day refresh tokens
+ **2FA Support:** TOTP with backup codes
+ **Password Security:** Bcrypt+pepper, complexity checks, breach detection
+ **Device Tracking:** Geolocation, browser info, last login
+ **Rate Limiting:** CAPTCHA after 3 failed attempts, 15-min block after 5
+ **Role-Based Access:** Admin, Moderator, User, Staff
+ **Constant-Time Comparison:** Prevents timing attacks
+ **Session Management:** Redis-backed with TTL
+ **Reauth for Sensitive Ops:** Password/email changes require verification
+ **Email Verification:** 6-digit codes with 15-min expiration
 
 ---
 
-## 📖 How to Use the Documentation
+##  How to Use the Documentation
 
 ### For API Testing:
 1. Go to http://localhost:8080/api-docs/
@@ -337,7 +337,7 @@ curl -X POST http://localhost:8080/user/refresh \
 
 ---
 
-## 🚨 Common Issues & Fixes
+## Common Issues & Fixes
 
 ### Database Connection Error
 ```bash
@@ -376,7 +376,7 @@ kill -9 <PID>
 
 ---
 
-## 📊 Project Structure Explanation
+## Project Structure Explanation
 
 ```
 GIN/
@@ -403,7 +403,7 @@ GIN/
 
 ---
 
-## 🎯 Next Steps
+##  Next Steps
 
 1. **Customize Configuration:**
    - Update .env with your actual credentials
@@ -428,7 +428,7 @@ GIN/
 
 ---
 
-## 📞 Support
+##  Support
 
 - **API Documentation:** http://localhost:8080/api-docs/
 - **Code Documentation:** See README.md
@@ -439,4 +439,4 @@ GIN/
 
 **Version:** 1.0.0
 **Last Updated:** May 30, 2026
-**Status:** ✅ Production Ready
+**Status:**  Production Ready
