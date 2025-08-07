@@ -43,12 +43,13 @@ func main() {
 	// Register custom validators
 	registerCustomValidators()
 
-	// Serve static documentation files
+	// Serve static documentation files and folder
+	r.Static("/docs", "./docs")
+	r.GET("/api-docs", serveSwaggerUI)
 	r.GET("/api-docs/", serveSwaggerUI)
-	r.GET("/docs/swagger.yaml", serveSwaggerYAML)
-
-	// Serve Swagger UI assets from CDN (no need to host locally)
-	r.StaticFile("/favicon.ico", "./docs/favicon.ico")
+	r.GET("/swagger.yaml", func(c *gin.Context) {
+		c.File("./docs/swagger.yaml")
+	})
 
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
